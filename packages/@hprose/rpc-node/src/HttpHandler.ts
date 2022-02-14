@@ -8,7 +8,7 @@
 |                                                          |
 | HttpHandler for TypeScript.                              |
 |                                                          |
-| LastModified: Mar 29, 2020                               |
+| LastModified: Jun 14, 2021                               |
 | Author: Ma Bingyao <andot@hprose.com>                    |
 |                                                          |
 \*________________________________________________________*/
@@ -255,7 +255,6 @@ export class HttpHandler implements Handler {
             });
             request.on('close', () => {
                 if (this.onclose) this.onclose(request);
-                reject();
             });
         });
     }

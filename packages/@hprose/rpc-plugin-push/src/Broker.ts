@@ -8,7 +8,7 @@
 |                                                          |
 | Broker for TypeScript.                                   |
 |                                                          |
-| LastModified: May 17, 2020                               |
+| LastModified: Jun 24, 2021                               |
 | Author: Ma Bingyao <andot@hprose.com>                    |
 |                                                          |
 \*________________________________________________________*/
@@ -35,7 +35,6 @@ export class Broker {
     protected messages: { [id: string]: { [topic: string]: Message[] | null } } = Object.create(null);
     protected responders: { [id: string]: Deferred<any> } = Object.create(null);
     protected timers: { [id: string]: Deferred<boolean> } = Object.create(null);
-    public messageQueueMaxLength: number = 10;
     public timeout: number = 120000;
     public heartbeat: number = 10000;
     public onsubscribe?: (id: string, topic: string, context: ServiceContext) => void;
@@ -138,8 +137,13 @@ export class Broker {
     protected response(id: string): void {
         if (this.responders[id]) {
             const responder = this.responders[id];
-            if (this.send(id, responder)) {
-                delete this.responders[id];
+            delete this.responders[id];
+            if (!this.send(id, responder)) {
+                if (id in this.responders) {
+                    responder.resolve();
+                } else {
+                    this.responders[id] = responder;
+                }
             }
         }
     }
@@ -179,7 +183,9 @@ export class Broker {
             this.responders[id] = responder;
             if (this.timeout > 0) {
                 const timeoutId = setTimeout(() => {
-                    responder.resolve(Object.create(null));
+                    if (this.responders[id] === responder) {
+                        responder.resolve(Object.create(null));
+                    }
                     this.doHeartbeat(id);
                 }, this.timeout);
                 responder.promise.then(() => {
@@ -193,11 +199,9 @@ export class Broker {
         if (this.messages[id]) {
             const messages = this.messages[id][topic];
             if (messages) {
-                if (messages.length < this.messageQueueMaxLength) {
-                    messages.push(new Message(data, from));
-                    this.response(id);
-                    return true;
-                }
+                messages.push(new Message(data, from));
+                this.response(id);
+                return true;
             }
         }
         return false;
@@ -214,13 +218,9 @@ export class Broker {
         for (const id in this.messages) {
             const messages = this.messages[id][topic];
             if (messages) {
-                if (messages.length < this.messageQueueMaxLength) {
-                    messages.push(new Message(data, from));
-                    this.response(id);
-                    result[id] = true;
-                } else {
-                    result[id] = false;
-                }
+                messages.push(new Message(data, from));
+                this.response(id);
+                result[id] = true;
             }
         }
         return result;
@@ -235,7 +235,7 @@ export class Broker {
     public deny(id: string, topic?: string): void {
         if (this.messages[id]) {
             if (topic) {
-                if (Array.isArray(this.messages[id][topic])) {
+                if (topic in this.messages[id]) {
                     this.messages[id][topic] = null;
                 }
             } else {
